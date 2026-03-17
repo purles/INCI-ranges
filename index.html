@@ -264,6 +264,81 @@ header .subtitle {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s;
+}
+
+.modal-overlay.active { display: flex; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: white;
+  border-radius: 14px;
+  padding: 32px 36px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+  text-align: center;
+  animation: slideUp 0.25s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal .modal-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.modal h3 {
+  font-size: 18px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.modal .modal-body {
+  font-size: 14px;
+  color: var(--text-light);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.modal .modal-body .error-detail {
+  background: #FFF3E0;
+  border: 1px solid #FFB74D;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: #E65100;
+  text-align: left;
+}
+
+.modal .btn-close-modal {
+  background: var(--purple);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 32px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.modal .btn-close-modal:hover { background: var(--purple-light); }
+
 /* Footer info */
 .app-footer {
   text-align: center;
@@ -275,11 +350,11 @@ header .subtitle {
 
 .app-footer .footer-bubble {
   display: inline-block;
-  background: white;
+  background: var(--purple);
+  color: rgba(255,255,255,0.75);
   border-radius: 20px;
   padding: 14px 32px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-  border: 1px solid #EEE;
+  box-shadow: 0 2px 8px rgba(75,40,86,0.25);
 }
 
 .app-footer .footer-bubble p { margin: 0; }
@@ -287,16 +362,17 @@ header .subtitle {
 
 .app-footer .footer-bubble .credit {
   font-size: 13px;
-  color: var(--text);
+  color: white;
 }
 
 .app-footer a {
-  color: var(--purple);
+  color: rgba(255,255,255,0.9);
   text-decoration: none;
   font-weight: 600;
 }
 
 .app-footer a:hover {
+  color: white;
   text-decoration: underline;
 }
 </style>
@@ -321,6 +397,16 @@ header .subtitle {
     <div class="subtitle">Narzędzie do generowania INCI z przedziałami procentowymi</div>
   </div>
 </header>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal">
+    <div class="modal-icon" id="modal-icon"></div>
+    <h3 id="modal-title"></h3>
+    <div class="modal-body" id="modal-body"></div>
+    <button class="btn-close-modal" id="modal-close">OK</button>
+  </div>
+</div>
 
 <div class="container">
 
@@ -836,9 +922,36 @@ const backBtn = document.getElementById('back-btn');
 const step2 = document.getElementById('step2');
 const step3 = document.getElementById('step3');
 
+function pluralize(n, one, few, many) {
+  if (n === 1) return one;
+  const lastTwo = n % 100;
+  const lastOne = n % 10;
+  if (lastOne >= 2 && lastOne <= 4 && (lastTwo < 12 || lastTwo > 14)) return few;
+  return many;
+}
+
 function scrollTo(el) {
   setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 }
+
+// --- Modal ---
+const modalOverlay = document.getElementById('modal-overlay');
+const modalIcon = document.getElementById('modal-icon');
+const modalTitle = document.getElementById('modal-title');
+const modalBody = document.getElementById('modal-body');
+const modalClose = document.getElementById('modal-close');
+
+function showModal(icon, title, bodyHtml) {
+  modalIcon.textContent = icon;
+  modalTitle.textContent = title;
+  modalBody.innerHTML = bodyHtml;
+  modalOverlay.classList.add('active');
+}
+
+modalClose.addEventListener('click', () => modalOverlay.classList.remove('active'));
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) modalOverlay.classList.remove('active');
+});
 
 // --- File Upload ---
 dropZone.addEventListener('click', () => fileInput.click());
@@ -870,8 +983,9 @@ function handleFile(file) {
 
     const names = workbook.SheetNames;
     fileInfo.style.display = 'block';
+    const sheetWord = pluralize(names.length, 'arkusz', 'arkusze', 'arkuszy');
     fileInfo.innerHTML = `
-      <span class="filename">${file.name}</span> — ${names.length} arkuszy
+      <span class="filename">${file.name}</span> — ${names.length} ${sheetWord}
       <div class="sheet-tags">
         ${names.map(n => `<span class="sheet-tag">${n}</span>`).join('')}
       </div>
@@ -960,24 +1074,46 @@ generateBtn.addEventListener('click', async () => {
   generateBtn.disabled = false;
   generateBtn.innerHTML = 'Generuj dokumenty';
 
-  if (errors.length) {
-    matchWarnings.innerHTML += `<div class="warning">Błędy generowania: ${errors.join('; ')}</div>`;
+  const fileEntries = Object.entries(generatedFiles);
+  const successCount = fileEntries.length;
+  const errorCount = errors.length;
+
+  // Auto-download
+  if (successCount > 0) {
+    if (successCount === 1) {
+      const [, { blob, filename }] = fileEntries[0];
+      saveAs(blob, filename);
+    } else {
+      const zip = new JSZip();
+      for (const [, { blob, filename }] of fileEntries) {
+        zip.file(filename, blob);
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, 'INCI in ranges.zip');
+    }
   }
 
-  const fileEntries = Object.entries(generatedFiles);
-  if (!fileEntries.length) return;
-
-  // Auto-download: 1 file = .docx, multiple = .zip
-  if (fileEntries.length === 1) {
-    const [, { blob, filename }] = fileEntries[0];
-    saveAs(blob, filename);
+  // Show modal with status
+  if (successCount > 0 && errorCount === 0) {
+    const fileWord = pluralize(successCount, 'plik', 'pliki', 'plików');
+    const format = successCount === 1 ? '.docx' : '.zip';
+    showModal(
+      '\u2705',
+      'Gotowe!',
+      `Wygenerowano <strong>${successCount}</strong> ${fileWord} i pobrano jako <strong>${format}</strong>.`
+    );
+  } else if (successCount > 0 && errorCount > 0) {
+    showModal(
+      '\u26A0\uFE0F',
+      'Częściowy sukces',
+      `Wygenerowano <strong>${successCount}</strong> z ${successCount + errorCount} plików.<div class="error-detail">${errors.join('<br>')}</div>`
+    );
   } else {
-    const zip = new JSZip();
-    for (const [, { blob, filename }] of fileEntries) {
-      zip.file(filename, blob);
-    }
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    saveAs(zipBlob, 'INCI in ranges.zip');
+    showModal(
+      '\u274C',
+      'Błąd generowania',
+      `Nie udało się wygenerować żadnego pliku.<div class="error-detail">${errors.join('<br>')}</div>`
+    );
   }
 });
 </script>
