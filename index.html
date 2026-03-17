@@ -269,12 +269,31 @@ header .subtitle {
   text-align: center;
   font-size: 12px;
   color: var(--text-light);
-  margin-top: 32px;
+  margin-top: 40px;
+  margin-bottom: 20px;
+}
+
+.app-footer .footer-bubble {
+  display: inline-block;
+  background: white;
+  border-radius: 20px;
+  padding: 14px 32px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  border: 1px solid #EEE;
+}
+
+.app-footer .footer-bubble p { margin: 0; }
+.app-footer .footer-bubble p + p { margin-top: 4px; }
+
+.app-footer .footer-bubble .credit {
+  font-size: 13px;
+  color: var(--text);
 }
 
 .app-footer a {
   color: var(--purple);
   text-decoration: none;
+  font-weight: 600;
 }
 
 .app-footer a:hover {
@@ -339,18 +358,11 @@ header .subtitle {
     </div>
   </div>
 
-  <!-- STEP 4: Downloads -->
-  <div class="card" id="step4" style="display:none">
-    <h2><span class="step">4</span> Pobierz pliki</h2>
-    <div id="download-list"></div>
-    <div class="btn-row" id="zip-row" style="display:none">
-      <button class="btn btn-primary" id="zip-btn">Pobierz wszystkie (.zip)</button>
-    </div>
-  </div>
-
   <div class="app-footer">
-    <p>Dane przetwarzane wyłącznie lokalnie w przeglądarce. Żadne informacje nie są wysyłane na zewnątrz.</p>
-    <p style="margin-top:8px;">Designed by <strong>Kornel Skąpski</strong> for <a href="https://www.purles.pl" target="_blank" rel="noopener">Purlés</a></p>
+    <div class="footer-bubble">
+      <p>Dane przetwarzane wyłącznie lokalnie w przeglądarce.</p>
+      <p class="credit">Designed by <strong>Kornel Skąpski</strong> for <a href="https://www.purles.pl" target="_blank" rel="noopener">Purlés</a></p>
+    </div>
   </div>
 </div>
 
@@ -821,11 +833,12 @@ const matchWarnings = document.getElementById('match-warnings');
 const matchTableBody = document.querySelector('#match-table tbody');
 const generateBtn = document.getElementById('generate-btn');
 const backBtn = document.getElementById('back-btn');
-const downloadList = document.getElementById('download-list');
-const zipBtn = document.getElementById('zip-btn');
 const step2 = document.getElementById('step2');
 const step3 = document.getElementById('step3');
-const step4 = document.getElementById('step4');
+
+function scrollTo(el) {
+  setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+}
 
 // --- File Upload ---
 dropZone.addEventListener('click', () => fileInput.click());
@@ -866,8 +879,8 @@ function handleFile(file) {
 
     step2.classList.remove('disabled');
     step3.style.display = 'none';
-    step4.style.display = 'none';
     generatedFiles = {};
+    scrollTo(step2);
   };
   reader.readAsArrayBuffer(file);
 }
@@ -912,17 +925,17 @@ matchBtn.addEventListener('click', () => {
 
   step3.style.display = 'block';
   step3.classList.remove('disabled');
-  step4.style.display = 'none';
   generatedFiles = {};
+  scrollTo(step3);
 });
 
 // --- Back to edit ---
 backBtn.addEventListener('click', () => {
   step3.style.display = 'none';
-  step4.style.display = 'none';
+  scrollTo(step2);
 });
 
-// --- Generate DOCX ---
+// --- Generate DOCX & auto-download ---
 generateBtn.addEventListener('click', async () => {
   const okResults = matchResults.filter(r => r.status === 'ok');
   if (!okResults.length) return;
@@ -947,37 +960,25 @@ generateBtn.addEventListener('click', async () => {
   generateBtn.disabled = false;
   generateBtn.innerHTML = 'Generuj dokumenty';
 
-  // Show downloads
-  const fileEntries = Object.entries(generatedFiles);
-  downloadList.innerHTML = fileEntries.map(([sku, { filename }]) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #EEE;">
-      <span style="flex:1;font-weight:600;">${filename}</span>
-      <button class="btn btn-outline btn-sm" onclick="downloadFile('${sku}')">Pobierz</button>
-    </div>
-  `).join('');
-
   if (errors.length) {
-    downloadList.innerHTML += `<div class="warning" style="margin-top:12px;">Błędy: ${errors.join('; ')}</div>`;
+    matchWarnings.innerHTML += `<div class="warning">Błędy generowania: ${errors.join('; ')}</div>`;
   }
 
-  document.getElementById('zip-row').style.display = fileEntries.length > 1 ? 'block' : 'none';
-  step4.style.display = 'block';
-});
+  const fileEntries = Object.entries(generatedFiles);
+  if (!fileEntries.length) return;
 
-// --- Download single file ---
-function downloadFile(sku) {
-  const f = generatedFiles[sku];
-  if (f) saveAs(f.blob, f.filename);
-}
-
-// --- Download ZIP ---
-zipBtn.addEventListener('click', async () => {
-  const zip = new JSZip();
-  for (const [sku, { blob, filename }] of Object.entries(generatedFiles)) {
-    zip.file(filename, blob);
+  // Auto-download: 1 file = .docx, multiple = .zip
+  if (fileEntries.length === 1) {
+    const [, { blob, filename }] = fileEntries[0];
+    saveAs(blob, filename);
+  } else {
+    const zip = new JSZip();
+    for (const [, { blob, filename }] of fileEntries) {
+      zip.file(filename, blob);
+    }
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    saveAs(zipBlob, 'INCI in ranges.zip');
   }
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  saveAs(zipBlob, 'INCI in ranges.zip');
 });
 </script>
 </body>
